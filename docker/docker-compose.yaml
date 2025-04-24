@@ -1,0 +1,22 @@
+services:
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: consul-server
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -client=0.0.0.0 -bootstrap-expect=1 -data-dir=/consul/data
+
+  svc-discovery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: svc-discovery
+    environment:
+      - DISCOVERY_INTERVAL=10
+      - CONSUL_HTTP_ADDR=localhost:8500
+      - CONSUL_HTTP_TOKEN=your-consul-token
+    network_mode: "host"
+    user: root
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock

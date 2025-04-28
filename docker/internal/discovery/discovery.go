@@ -2,10 +2,7 @@ package discovery
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -77,19 +74,8 @@ func (d *DockerDiscovery) getContainerServiceInfo(container container.Summary) (
 		return nil, fmt.Errorf("no ports found for container %s", container.ID)
 	}
 
-	// we are using networking mode "host"
-	host := "localhost"
-	port := container.Ports[0].PublicPort
-
-	// Fetch the OpenAPI spec from the container
-	openapiSpec, err := d.fetchOpenAPISpec(host, int(port))
-	if err != nil {
-		log.Debugf("Error fetching OpenAPI spec for container %s: %v - ports: %v", container.Names[0], err, container.Ports)
-		return nil, err
-	}
-
 	// Detect the agent protocol
-	protocol, err := protocols.DetectAgentProtocol(openapiSpec)
+	protocol, err := protocols.DetectAgentProtocol(container)
 	if err != nil {
 		log.Errorf("Failed to detect agent protocol: %v", err)
 		return nil, err
@@ -99,7 +85,12 @@ func (d *DockerDiscovery) getContainerServiceInfo(container container.Summary) (
 	if protocol == "ACP" {
 		log.Info("Detected ACP protocol, checking for subagents...")
 		// TODO: Implement subagent discovery
+	} else if protocol == "AGP" {
+		log.Info("Detected AGP protocol, checking for subagents...")
+		// TODO: this is a placeholder for when we have an AGP control plane
 	}
+
+	host, port, _ := protocols.GetContainerAddress(container)
 
 	return &ServiceInfo{
 		Name:         container.Names[0],
@@ -110,28 +101,4 @@ func (d *DockerDiscovery) getContainerServiceInfo(container container.Summary) (
 		OpenapiSpec:  fmt.Sprintf("http://%s:%d/openapi.json", host, port),
 		DocsEndpoint: fmt.Sprintf("http://%s:%d/docs", host, port),
 	}, nil
-}
-
-func (d *DockerDiscovery) fetchOpenAPISpec(host string, port int) (map[string]interface{}, error) {
-	openapiURL := fmt.Sprintf("http://%s:%d/openapi.json", host, port)
-	httpClient := &http.Client{Timeout: 3 * time.Second}
-	resp, err := httpClient.Get(openapiURL)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get OpenAPI spec from %s: %v", openapiURL, resp.Status)
-	}
-
-	defer resp.Body.Close()
-
-	// Process the OpenAPI spec here
-	spec := make(map[string]interface{})
-	if err := json.NewDecoder(resp.Body).Decode(&spec); err != nil {
-		log.Errorf("Failed to decode OpenAPI spec: %v", err)
-		return nil, err
-	}
-
-	return spec, nil
 }

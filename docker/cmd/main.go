@@ -1,12 +1,13 @@
 package main
 
 import (
-	"ioa-svc-disc-docker/internal/discovery"
-	"ioa-svc-disc-docker/internal/registry"
-	agentprotocols "ioa-svc-disc-docker/pkg/agent-protocols"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/codyhartsook/ioa-service-discovery/docker/internal/discovery"
+	"github.com/codyhartsook/ioa-service-discovery/docker/internal/registry"
+	agentprotocols "github.com/codyhartsook/ioa-service-discovery/docker/pkg/agent-protocols"
 
 	log "github.com/sirupsen/logrus"
 )

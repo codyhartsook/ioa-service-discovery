@@ -6,8 +6,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	protocols "ioa-svc-disc-docker/pkg/agent-protocols"
-	"ioa-svc-disc-docker/pkg/models"
+	protocols "github.com/codyhartsook/ioa-service-discovery/docker/pkg/agent-protocols"
+	"github.com/codyhartsook/ioa-service-discovery/docker/pkg/models"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"

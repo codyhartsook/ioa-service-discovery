@@ -2,10 +2,11 @@ package registry
 
 import (
 	"fmt"
-	"ioa-svc-disc-docker/pkg/models"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/codyhartsook/ioa-service-discovery/docker/pkg/models"
 
 	"github.com/hashicorp/consul/api"
 )

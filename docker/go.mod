@@ -1,4 +1,4 @@
-module ioa-svc-disc-docker
+module github.com/codyhartsook/ioa-service-discovery/docker
 
 go 1.23.1
 

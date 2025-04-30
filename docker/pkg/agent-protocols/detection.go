@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"ioa-svc-disc-docker/pkg/models"
+	"github.com/codyhartsook/ioa-service-discovery/docker/pkg/models"
 
 	"github.com/docker/docker/api/types/container"
 	mcpclient "github.com/mark3labs/mcp-go/client"

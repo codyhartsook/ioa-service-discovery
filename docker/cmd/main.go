@@ -32,6 +32,8 @@ func main() {
 
 	log.Infof("Discovery interval set to %d seconds", discoveryInterval)
 
+	// add all protocol sniffers here
+	// TODO: use flags or env vars to configure the protocol sniffers
 	protocolSniffers := []agentprotocols.ProtocolSniffer{
 		&agentprotocols.ACPSniffer{},
 		&agentprotocols.MCPSniffer{},

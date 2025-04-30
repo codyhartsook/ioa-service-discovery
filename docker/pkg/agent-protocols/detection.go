@@ -5,29 +5,21 @@ import (
 	"fmt"
 	"time"
 
+	"ioa-svc-disc-docker/pkg/models"
+
 	"github.com/docker/docker/api/types/container"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	log "github.com/sirupsen/logrus"
 )
 
-type AgentServiceDetails struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Protocol  string            `json:"protocol"`
-	Host      string            `json:"host"`
-	Port      uint16            `json:"port"`
-	Metadata  map[string]string `json:"metadata"`
-	SubAgents []string          `json:"sub_agents"`
-}
-
 type ProtocolSniffer interface {
-	SniffProtocol(container container.Summary) (*AgentServiceDetails, error)
+	SniffProtocol(container container.Summary) (*models.AgentServiceDetails, error)
 }
 
 type ACPSniffer struct{}
 
-func (s *ACPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+func (s *ACPSniffer) SniffProtocol(container container.Summary) (*models.AgentServiceDetails, error) {
 	host, port, err := GetContainerAddress(container)
 	if err != nil {
 		log.Infof("Error getting container address for %s: %v", container.Names[0], err)
@@ -63,7 +55,7 @@ func (s *ACPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDe
 		}
 	}
 
-	return &AgentServiceDetails{
+	return &models.AgentServiceDetails{
 		ID:       container.ID,
 		Name:     container.Names[0], // could try to get name from the spec but will likely need an api key
 		Protocol: "ACP",
@@ -81,7 +73,7 @@ func (s *ACPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDe
 
 type MCPSniffer struct{}
 
-func (s *MCPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+func (s *MCPSniffer) SniffProtocol(container container.Summary) (*models.AgentServiceDetails, error) {
 	host, port, err := GetContainerAddress(container)
 	if err != nil {
 		return nil, fmt.Errorf("no ports found for container %s", container.ID)
@@ -130,7 +122,9 @@ func (s *MCPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDe
 
 	// get server resources
 
-	return &AgentServiceDetails{
+	log.Infof("MCP server info: %v", result.ServerInfo)
+
+	return &models.AgentServiceDetails{
 		Protocol: "MCP",
 		ID:       container.ID,
 		Name:     result.ServerInfo.Name,
@@ -145,12 +139,12 @@ func (s *MCPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDe
 
 type APSniffer struct{}
 
-func (s *APSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+func (s *APSniffer) SniffProtocol(container container.Summary) (*models.AgentServiceDetails, error) {
 	return nil, fmt.Errorf("AP protocol detection not implemented")
 }
 
 type A2ASniffer struct{}
 
-func (s *A2ASniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+func (s *A2ASniffer) SniffProtocol(container container.Summary) (*models.AgentServiceDetails, error) {
 	return nil, fmt.Errorf("A2A protocol detection not implemented")
 }

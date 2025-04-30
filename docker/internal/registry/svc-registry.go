@@ -2,7 +2,7 @@ package registry
 
 import (
 	"fmt"
-	protocols "ioa-svc-disc-docker/pkg/agent-protocols"
+	"ioa-svc-disc-docker/pkg/models"
 	"os"
 	"regexp"
 	"strings"
@@ -44,24 +44,30 @@ func sanitizeServiceName(name string) string {
 	return safeName
 }
 
-func (c *ConsulServiceMonitor) RegisterService(svc *protocols.AgentServiceDetails) error {
-	// Sanitize the service name to be DNS-compliant
-	svc.Name = sanitizeServiceName(svc.Name)
-
-	reg := &api.AgentServiceRegistration{
-		Name:    svc.Name,
+func agentDetailsToServiceRegistration(svc *models.AgentServiceDetails) *api.AgentServiceRegistration {
+	record := &api.AgentServiceRegistration{
 		ID:      svc.ID,
+		Name:    sanitizeServiceName(svc.Name),
 		Address: svc.Host,
 		Port:    int(svc.Port),
-		Meta:    svc.Metadata,
-		/*Check: &api.AgentServiceCheck{
-			HTTP:     fmt.Sprintf("http://%s:%d/docs", info.Address, info.Port),
-			Interval: "10s",
-			Timeout:  "2s",
-		},*/
+		Tags:    []string{"agent"},
+		Meta:    svc.ToMap(), // Add the entire svc as metadata
 	}
 
-	err := c.client.Agent().ServiceRegister(reg)
+	// TODO: Add health check if we have an http endpoint
+	/*Check: &api.AgentServiceCheck{
+		HTTP:     fmt.Sprintf("http://%s:%d/docs", info.Address, info.Port),
+		Interval: "10s",
+		Timeout:  "2s",
+	},*/
+
+	return record
+}
+
+func (c *ConsulServiceMonitor) RegisterService(svc *models.AgentServiceDetails) error {
+	record := agentDetailsToServiceRegistration(svc)
+
+	err := c.client.Agent().ServiceRegister(record)
 	if err != nil {
 		return fmt.Errorf("failed to register service: %w", err)
 	}

@@ -2,7 +2,7 @@ package registry
 
 import (
 	"fmt"
-	disc "ioa-svc-disc-docker/internal/discovery"
+	protocols "ioa-svc-disc-docker/pkg/agent-protocols"
 	"os"
 	"regexp"
 	"strings"
@@ -44,20 +44,16 @@ func sanitizeServiceName(name string) string {
 	return safeName
 }
 
-func (c *ConsulServiceMonitor) RegisterService(info *disc.ServiceInfo) error {
+func (c *ConsulServiceMonitor) RegisterService(svc *protocols.AgentServiceDetails) error {
 	// Sanitize the service name to be DNS-compliant
-	info.Name = sanitizeServiceName(info.Name)
+	svc.Name = sanitizeServiceName(svc.Name)
 
 	reg := &api.AgentServiceRegistration{
-		Name:    info.Name,
-		Address: info.Address,
-		Port:    info.Port,
-		Meta: map[string]string{
-			"image":            info.Image,
-			"protocol":         info.Protocol,
-			"openapi_spec_url": info.OpenapiSpec,
-			"openapi_docs_url": info.DocsEndpoint,
-		},
+		Name:    svc.Name,
+		ID:      svc.ID,
+		Address: svc.Host,
+		Port:    int(svc.Port),
+		Meta:    svc.Metadata,
 		/*Check: &api.AgentServiceCheck{
 			HTTP:     fmt.Sprintf("http://%s:%d/docs", info.Address, info.Port),
 			Interval: "10s",
@@ -69,6 +65,6 @@ func (c *ConsulServiceMonitor) RegisterService(info *disc.ServiceInfo) error {
 	if err != nil {
 		return fmt.Errorf("failed to register service: %w", err)
 	}
-	fmt.Printf("Registered service with Consul: %s\n", info.Name)
+	fmt.Printf("Registered service with Consul: %s\n", svc.Name)
 	return nil
 }

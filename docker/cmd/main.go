@@ -3,6 +3,7 @@ package main
 import (
 	"ioa-svc-disc-docker/internal/discovery"
 	"ioa-svc-disc-docker/internal/registry"
+	agentprotocols "ioa-svc-disc-docker/pkg/agent-protocols"
 	"os"
 	"strconv"
 	"time"
@@ -31,7 +32,12 @@ func main() {
 
 	log.Infof("Discovery interval set to %d seconds", discoveryInterval)
 
-	svcDiscovery := discovery.NewDockerDiscovery()
+	protocolSniffers := []agentprotocols.ProtocolSniffer{
+		&agentprotocols.ACPSniffer{},
+		&agentprotocols.MCPSniffer{},
+	}
+
+	svcDiscovery := discovery.NewDockerDiscovery(protocolSniffers)
 	svcRegistry, err := registry.NewConsulMonitor()
 	if err != nil {
 		log.Fatalf("Error creating Consul client: %v", err)
@@ -45,7 +51,7 @@ func main() {
 		for _, info := range services {
 			err := svcRegistry.RegisterService(info)
 			if err != nil {
-				log.Errorf("Failed to register service %s: %v", info.Name, err)
+				log.Errorf("Failed to register service %s: %v", info.ID, err)
 			}
 		}
 	}

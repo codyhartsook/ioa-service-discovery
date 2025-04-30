@@ -1,63 +1,51 @@
 package agentprotocols
 
 import (
+	"context"
 	"fmt"
-	"net/http"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/mcp"
 	log "github.com/sirupsen/logrus"
 )
 
-// DetectAgentProtocol uses the provided openapi spec to determine the agent protocol being used if any.
-func DetectAgentProtocol(container container.Summary) (string, error) {
-	// TODO: optimze the detection process by checking the container's labels or environment variables first
-	// then check concurrently
-
-	// detect acp
-	protocol, err := DetectACP(container)
-	if err == nil {
-		log.Infof("Detected ACP protocol for container %s", container.Names[0])
-		return protocol, nil
-	}
-	// detect mcp
-	protocol, err = DetectMCP(container)
-	if err == nil {
-		log.Infof("Detected MCP protocol for container %s", container.Names[0])
-		return protocol, nil
-	}
-	// detect ap
-	protocol, err = DetectAP(container)
-	if err == nil {
-		log.Infof("Detected AP protocol for container %s", container.Names[0])
-		return protocol, nil
-	}
-	// detect a2a
-	protocol, err = DetectA2A(container)
-	if err == nil {
-		log.Infof("Detected A2A protocol for container %s", container.Names[0])
-		return protocol, nil
-	}
-
-	return "unknown", fmt.Errorf("failed to detect agent protocol for container %s: %v", container.Names[0], err)
+type AgentServiceDetails struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Protocol  string            `json:"protocol"`
+	Host      string            `json:"host"`
+	Port      uint16            `json:"port"`
+	Metadata  map[string]string `json:"metadata"`
+	SubAgents []string          `json:"sub_agents"`
 }
 
-// TODO: Move the protocol detection functions to their own files
+type ProtocolSniffer interface {
+	SniffProtocol(container container.Summary) (*AgentServiceDetails, error)
+}
 
-// DetectACP checks if the provided container exposes an ACP api.
-func DetectACP(container container.Summary) (string, error) {
-	spec, err := FetchOpenAPISpec(container)
+type ACPSniffer struct{}
+
+func (s *ACPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+	host, port, err := GetContainerAddress(container)
+	if err != nil {
+		log.Infof("Error getting container address for %s: %v", container.Names[0], err)
+		return nil, err
+	}
+	spec, err := FetchOpenAPISpec(host, port)
 	if err != nil {
 		log.Infof("Error fetching OpenAPI spec for container %s: %v - ports: %v", container.Names[0], err, container.Ports)
-		return "", err
+		return nil, err
 	}
 
 	if _, ok := spec["openapi"]; !ok {
-		return "", fmt.Errorf("invalid OpenAPI spec: 'openapi' field is missing")
+		return nil, fmt.Errorf("invalid OpenAPI spec: 'openapi' field is missing")
 	}
 
 	paths, ok := spec["paths"].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("invalid OpenAPI spec: 'paths' field is missing or not a map")
+		return nil, fmt.Errorf("invalid OpenAPI spec: 'paths' field is missing or not a map")
 	}
 
 	// Define required paths
@@ -71,43 +59,98 @@ func DetectACP(container container.Summary) (string, error) {
 	// Check if each required path exists
 	for _, path := range requiredPaths {
 		if _, ok := paths[path]; !ok {
-			return "", fmt.Errorf("invalid OpenAPI spec: missing path %s", path)
+			return nil, fmt.Errorf("invalid OpenAPI spec: missing path %s", path)
 		}
 	}
 
-	return "ACP", nil
+	return &AgentServiceDetails{
+		ID:       container.ID,
+		Name:     container.Names[0], // could try to get name from the spec but will likely need an api key
+		Protocol: "ACP",
+		Host:     host,
+		Port:     port,
+		Metadata: map[string]string{
+			"name":    container.Names[0],
+			"image":   container.Image,
+			"version": container.ImageID,
+			"openapi": fmt.Sprintf("http://%s:%d/openapi.json", host, port),
+			"docs":    fmt.Sprintf("http://%s:%d/docs", host, port),
+		},
+	}, nil
 }
 
-func DetectMCP(container container.Summary) (string, error) {
+type MCPSniffer struct{}
+
+func (s *MCPSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
 	host, port, err := GetContainerAddress(container)
 	if err != nil {
-		return "", fmt.Errorf("no ports found for container %s", container.ID)
+		return nil, fmt.Errorf("no ports found for container %s", container.ID)
 	}
 
-	url := fmt.Sprintf("http://%s:%d/sse", host, port)
+	serverUrl := fmt.Sprintf("http://%s:%d/sse", host, port)
 
-	log.Debugf("Checking for MCP protocol at %s", url)
-	resp, err := http.Get(url)
+	client, err := mcpclient.NewSSEMCPClient(serverUrl)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to %s: %v", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get SSE stream from %s: %v", url, resp.Status)
+		// dont log anything, likely just not an mcp server
+		return nil, fmt.Errorf("failed to create MCP client: %v", err)
 	}
 
-	log.Debugf("Successfully connected to %s", url)
+	defer client.Close()
 
-	// Check for the presence of the "event" field in the SSE stream
-	return "MCP", nil
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Start the client
+	if err := client.Start(ctx); err != nil {
+		log.Errorf("Failed to start MCP client: %v", err)
+		return nil, fmt.Errorf("failed to start MCP client: %v", err)
+	}
+
+	// Initialize
+	initRequest := mcp.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcp.Implementation{
+		Name:    "ioa-service-discovery",
+		Version: "1.0.0",
+	}
+
+	result, err := client.Initialize(ctx, initRequest)
+	if err != nil {
+		log.Errorf("Failed to initialize MCP client: %v", err)
+		return nil, fmt.Errorf("failed to initialize MCP client: %v", err)
+	}
+
+	// get server metadata
+	// result.ServerInfo.Name
+
+	// get server tools
+	// result.ServerInfo.Tools
+
+	// get server prompts
+
+	// get server resources
+
+	return &AgentServiceDetails{
+		Protocol: "MCP",
+		ID:       container.ID,
+		Name:     result.ServerInfo.Name,
+		Host:     host,
+		Port:     port,
+		Metadata: map[string]string{
+			"image":   container.Image,
+			"version": result.ProtocolVersion,
+		},
+	}, nil
 }
 
-// DetectAP checks if the provided OpenAPI spec is for the AP protocol.
-func DetectAP(container container.Summary) (string, error) {
-	return "", fmt.Errorf("AP protocol detection not implemented")
+type APSniffer struct{}
+
+func (s *APSniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+	return nil, fmt.Errorf("AP protocol detection not implemented")
 }
 
-// DetectA2A checks if the provided OpenAPI spec is for the A2A protocol.
-func DetectA2A(container container.Summary) (string, error) {
-	return "", fmt.Errorf("A2A protocol detection not implemented")
+type A2ASniffer struct{}
+
+func (s *A2ASniffer) SniffProtocol(container container.Summary) (*AgentServiceDetails, error) {
+	return nil, fmt.Errorf("A2A protocol detection not implemented")
 }

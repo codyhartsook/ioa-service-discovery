@@ -21,12 +21,8 @@ func GetContainerAddress(container container.Summary) (string, uint16, error) {
 	return host, port, nil
 }
 
-func FetchOpenAPISpec(container container.Summary) (map[string]interface{}, error) {
+func FetchOpenAPISpec(host string, port uint16) (map[string]interface{}, error) {
 	// TODO: get protocol schema from the container: ie http or https
-	host, port, err := GetContainerAddress(container)
-	if err != nil {
-		return nil, err
-	}
 	openapiURL := fmt.Sprintf("http://%s:%d/openapi.json", host, port)
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	resp, err := httpClient.Get(openapiURL)
